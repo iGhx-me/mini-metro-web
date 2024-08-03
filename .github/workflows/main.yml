@@ -1,167 +1,46 @@
-name: CI/CD
-
-on:
-    workflow_dispatch:
-    push:
-concurrency:
-    group: "${{ github.workflow }} @ ${{ github.head_ref || github.ref }}"
-    cancel-in-progress: true
-
-permissions:
-    contents: write # publish a GitHub release
-    pages: write # deploy to GitHub Pages
-    issues: write # comment on released issues
-    pull-requests: write # comment on released pull requests
-
-jobs:
-    setup:
-        runs-on: ubuntu-latest
-        env:
-            DETECT_CHROMEDRIVER_VERSION: "true"
-            JEST_JUNIT_OUTPUT_DIR: test-results
-            NODE_OPTIONS: --max-old-space-size=4000
-        steps:
-            - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
-            - uses: actions/setup-node@26961cf329f22f6837d5f54c3efd76b480300ace # v4
-              with:
-                  cache: "npm"
-            - name: Info
-              run: |
-                  cat <<EOF
-                  Node version: $(node --version)
-                  NPM version: $(npm --version)
-                  GitHub ref: ${{ github.ref }}
-                  GitHub head ref: ${{ github.head_ref }}
-                  EOF
-            - name: Install Dependencies
-              run: npm ci
-            - name: Cache node_modules
-              id: cache-nodemodules
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    node_modules
-                key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-            - name: Cache src/generated
-              id: cache-generated
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    src/generated
-                key: ${{ runner.os }}-generated-${{ hashFiles('package-lock.json') }}
-            - name: Cache static/microbit
-              id: cache-static
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    static/microbit
-                key: ${{ runner.os }}-microbit-${{ hashFiles('package-lock.json') }}
-    build:
-        needs: [setup]
-        env:
-            NODE_OPTIONS: --max-old-space-size=4000
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
-            - uses: actions/setup-node@26961cf329f22f6837d5f54c3efd76b480300ace # v4
-              with:
-                cache: "npm"
-            - name: Retrieve node_modules
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    node_modules
-                key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-            - name: Retrieve src/generated
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    src/generated
-                key: ${{ runner.os }}-generated-${{ hashFiles('package-lock.json') }}
-            - name: Retireve static/microbit
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    static/microbit
-                key: ${{ runner.os }}-microbit-${{ hashFiles('package-lock.json') }}
-            - name: Run Build
-              env:
-                NODE_ENV: production
-              run: npm run build
-            - name: Cache Build Directory
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    ./build
-                key: ${{ runner.os }}-build-${{ hashFiles('package-lock.json') }}
-            - name: Cache Dist Directory
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    ./dist
-                key: ${{ runner.os }}-dist-${{ hashFiles('package-lock.json') }}
-            - name: Store Build Output
-              uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
-              with:
-                name: build-output
-                path: ./build
-            - name: Store Dist Output
-              uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
-              with:
-                name: dist-output
-                path: ./dist
-    test-integration:
-        needs: build
-        runs-on: ubuntu-latest
-        env:
-            JEST_JUNIT_OUTPUT_NAME: results.txt
-            JEST_JUNIT_OUTPUT_DIR: test-results/integration
-        steps:
-            - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
-            - name: Retrieve npm dependencies
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    node_modules
-                key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-            - name: Retrieve Build
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    ./build
-                key: ${{ runner.os }}-build-${{ hashFiles('package-lock.json') }}
-            - run: |
-                for F in chrome chromium chromedriver; do
-                    which $F && $F --version || echo Not found: $F
-                done
-            - name: Run Integration Tests
-              run: npm run test:integration -- --reporters="default" --reporters="jest-junit"
-            - name: Store Integration Test Results
-              uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
-              with:
-                name: integration-test-output
-                path: ./test-results/*
-    deploy-gh-pages:
-        needs: [test-integration]
-        if: (!(startsWith(github.ref, 'refs/heads/dependabot/') || startsWith(github.ref, 'refs/heads/renovate/')))
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
-            - name: Retrieve npm dependencies
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    node_modules
-                key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-            - name: Retrieve Build Directory
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    ./build
-                key: ${{ runner.os }}-build-${{ hashFiles('package-lock.json') }}
-            - name: Deploy playground to GitHub Pages
-              uses: peaceiris/actions-gh-pages@373f7f263a76c20808c831209c920827a82a2847 # v3
-              with:
-                github_token: ${{ secrets.GITHUB_TOKEN }}
-                publish_dir: ./build
-                full_commit_message: "Build for ${{ github.sha }} ${{ github.event.head_commit.message }}"
+            - name: GitHub Pages action
+  # You may pin to the exact commit or the version.
+  uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
+  with:
+    # Set a SSH private key from repository secret value for pushing to the remote branch.
+    deploy_key: # optional
+    # Set a generated GITHUB_TOKEN for pushing to the remote branch.
+    github_token: # optional
+    # Set a personal access token for pushing to the remote branch.
+    personal_token: # optional
+    # Set a target branch for deployment.
+    publish_branch: # optional, default is gh-pages
+    # Set an input directory for deployment.
+    publish_dir: # optional, default is public
+    # Set an destination subdirectory for deployment.
+    destination_dir: # optional, default is 
+    # Set an external repository (owner/repo).
+    external_repository: # optional
+    # If empty commits should be made to the publication branch
+    allow_empty_commit: # optional, default is false
+    # If existing files in the publish branch should be not removed before deploying
+    keep_files: # optional, default is false
+    # Keep only the latest commit on a GitHub Pages branch
+    force_orphan: # optional, default is false
+    # Set Git user.name
+    user_name: # optional
+    # Set Git user.email
+    user_email: # optional
+    # Set a custom commit message with a triggered commit hash
+    commit_message: # optional
+    # Set a custom full commit message without a triggered commit hash
+    full_commit_message: # optional
+    # Set tag name
+    tag_name: # optional
+    # Set tag message
+    tag_message: # optional
+    # Enable the GitHub Pages built-in Jekyll
+    enable_jekyll: # optional, default is false
+    # An alias for enable_jekyll to disable adding .nojekyll file to a publishing branch
+    disable_nojekyll: # optional, default is false
+    # Set custom domain
+    cname: # optional
+    # Set files or directories to exclude from a publish directory.
+    exclude_assets: # optional, default is .github
+    path: ./blid
+          
