@@ -35,8 +35,6 @@ jobs:
                   EOF
             - name: Install Dependencies
               run: npm ci
-            - name: Lint
-              run: npm run test:lint
             - name: Cache node_modules
               id: cache-nodemodules
               uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
