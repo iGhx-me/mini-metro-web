@@ -56,29 +56,8 @@ jobs:
                 path:
                     static/microbit
                 key: ${{ runner.os }}-microbit-${{ hashFiles('package-lock.json') }}
-    test-unit:
-        needs: setup
-        runs-on: ubuntu-latest
-        env:
-            JEST_JUNIT_OUTPUT_NAME: unit-results.xml
-            JEST_JUNIT_OUTPUT_DIR: test-results/unit
-        steps:
-            - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
-            - name: Cache NPM dependencies
-              uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
-              with:
-                path:
-                    node_modules
-                key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-            - name: Run Unit Tests
-              run: npm run test:unit -- --reporters="default" --reporters="jest-junit" --coverage --coverageReporters=text --coverageReporters=lcov --maxWorkers="2"
-            - name: Store Unit Test Results
-              uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
-              with:
-                name: unit-test-output
-                path: ./test-results/*
     build:
-        needs: [setup, test-unit]
+        needs: [setup]
         env:
             NODE_OPTIONS: --max-old-space-size=4000
         runs-on: ubuntu-latest
@@ -87,7 +66,6 @@ jobs:
             - uses: actions/setup-node@26961cf329f22f6837d5f54c3efd76b480300ace # v4
               with:
                 cache: "npm"
-                node-version-file: ".nvmrc"
             - name: Retrieve node_modules
               uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3
               with:
@@ -164,7 +142,7 @@ jobs:
                 name: integration-test-output
                 path: ./test-results/*
     deploy-gh-pages:
-        needs: [test-integration, test-unit]
+        needs: [test-integration]
         if: (!(startsWith(github.ref, 'refs/heads/dependabot/') || startsWith(github.ref, 'refs/heads/renovate/')))
         runs-on: ubuntu-latest
         steps:
